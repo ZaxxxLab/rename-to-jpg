@@ -1,0 +1,79 @@
+name: Build and release binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:  # allows manual runs from the Actions tab
+
+permissions:
+  contents: write  # needed to create/update a release
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: rename_to_jpg-windows.exe
+            binary: dist/rename_to_jpg.exe
+          - os: macos-latest
+            artifact: rename_to_jpg-macos
+            binary: dist/rename_to_jpg
+          - os: ubuntu-latest
+            artifact: rename_to_jpg-linux
+            binary: dist/rename_to_jpg
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller
+
+      - name: Build binary
+        run: |
+          pyinstaller --onefile --name rename_to_jpg rename_to_jpg.py
+
+      - name: Rename artifact
+        shell: bash
+        run: |
+          cp "${{ matrix.binary }}" "${{ matrix.artifact }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    name: Create release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f -exec ls -lh {} \;
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
