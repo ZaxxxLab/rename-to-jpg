@@ -267,9 +267,21 @@ class App:
         self.btn_undo = tk.Button(frame_btns, command=self.run_undo, bg="white", fg=self.cherry, font=("Segoe UI", 10), width=20, relief=tk.GROOVE, cursor="hand2", bd=1)
         self.btn_undo.pack(side=tk.LEFT, padx=10)
 
-        # 5. Лог
-        self.log_text = tk.Text(self.root, height=15, padx=10, pady=10, state=tk.DISABLED, bg="#F3F4F6", fg=self.text_color, font=("Consolas", 10), relief=tk.FLAT, bd=1)
-        self.log_text.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
+        # 5. Лог с полосой прокрутки
+        # Создаем фрейм, чтобы текст и скроллбар стояли рядом
+        frame_log = tk.Frame(self.root, bg=self.bg_color)
+        frame_log.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
+
+        # Создаем скроллбар (в вишневом цвете не получится, Tkinter использует системный)
+        scrollbar = tk.Scrollbar(frame_log)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Создаем текстовое поле и привязываем к скроллбару
+        self.log_text = tk.Text(frame_log, height=15, padx=10, pady=10, state=tk.DISABLED, bg="#F3F4F6", fg=self.text_color, font=("Consolas", 10), relief=tk.FLAT, bd=1, yscrollcommand=scrollbar.set)
+        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Связываем скроллбар с полем
+        scrollbar.config(command=self.log_text.yview)
 
     def update_lang(self):
         self.t = STRINGS[self.lang_var.get()]
