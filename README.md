@@ -1,15 +1,22 @@
-\# rename\_to\_jpg
+# rename_to_jpg
 
+A small cross-platform utility that batch-renames image files to the `.jpg` extension. Available as a modern **GUI application** or a **command-line tool**. No dependencies, no installation — just Python 3.8+ (or a prebuilt binary from [Releases](../../releases)).
 
+> **This is not a converter.** The script changes file names only. Renaming a PNG to `.jpg` leaves the content as PNG, and some programs may fail to open it. If you need real conversion, use ImageMagick, `pillow`, or `ffmpeg`.
 
-A small cross-platform command-line utility that batch-renames image files to the `.jpg` extension. No dependencies, no installation — just Python 3.8+ (or a prebuilt binary from \[Releases](../../releases)).
+## Features
 
-
+- **Beautiful GUI:** Select folders visually, toggle options, and see the results in real-time.
+- **Multi-language:** English and Russian UI (auto-detected).
+- **Undo:** Accidentally renamed 500 files? One click rolls it back.
+- **Recursive:** Optionally include all subfolders.
+- **Safe:** Skips non-image files (like `.pdf` or `.exe`) to prevent breaking them.
+- **Dry-run mode:** Preview changes before applying them.
 
 ## Screenshots
+
 ![Interface](docs/screenshot-main.png)
 ![Result](docs/screenshot-result.png)
-
 
 
 > \*\*This is not a converter.\*\* The script changes file names only. Renaming a PNG to `.jpg` leaves the content as PNG, and some programs may fail to open it. If you need real conversion, use ImageMagick, `pillow`, or `ffmpeg`.
