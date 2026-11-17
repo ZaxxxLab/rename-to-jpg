@@ -1,238 +1,358 @@
 #!/usr/bin/env python3
-"""
-rename_to_jpg.py — batch-rename image files to .jpg / массовое переименование
-файлов изображений в .jpg
-
-Modes / Режимы:
-  1 (default) — append .jpg: photo.png → photo.png.jpg
-  2 — replace extension: photo.png → photo.jpg
-
-Only files with image extensions (.png, .jpeg, .webp, .bmp, .gif, .tiff, .tif,
-.heic, .avif) and files without an extension are renamed. Everything else
-(pdf, docx, exe, etc.) is skipped so you don't break a file by accident.
-
-NOTE: this script does NOT convert files. It only changes the name. Renaming
-a PNG to .jpg leaves the content as PNG, and some programs may fail to open it.
-"""
-
-import argparse
 import os
 import sys
-
-if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding='utf-8')
-    sys.stderr.reconfigure(encoding='utf-8')
+import json
+import argparse
+import locale
+import tkinter as tk
+from tkinter import filedialog, messagebox
+from datetime import datetime
 
 IMAGE_EXTS = {
     ".png", ".jpeg", ".jpg", ".webp", ".bmp", ".gif",
     ".tiff", ".tif", ".heic", ".avif",
 }
 
-# ---------------------------------------------------------------- translations
+LOG_FILE = "rename_history.json"
+
+# ==========================================
+# ЛОКАЛИЗАЦИЯ (СЛОВАРИ)
+# ==========================================
 STRINGS = {
-    "en": {
-        "folder_not_found": "❌ Folder not found: {path}",
-        "read_error": "❌ Could not read folder: {err}",
-        "skip_already": "⏭ Skipped (already .jpg): {name}",
-        "skip_not_image": "⏭ Skipped (not an image): {name}",
-        "conflict": "⚠️ Conflict: {old} → {new} (already exists, skipped)",
-        "dry_run": "🔍 (dry-run) {old} → {new}",
-        "renamed": "✅ {old} → {new}",
-        "rename_error": "❌ Error renaming {name}: {err}",
-        "summary": "\n📊 {prefix}renamed {renamed}, skipped {skipped}",
-        "dry_prefix": "Dry-run: ",
-        "processing": "\n📁 Processing folder: {path}\n",
-        "enter_folder": "Enter folder path: ",
-        "no_path": "❌ No path given",
-        "modes": "Modes:\n  1 - Append .jpg (keep name)\n  2 - Replace extension with .jpg",
-        "choose_mode": "\nChoose mode (1/2) [1]: ",
-        "bad_choice": "❌ Invalid choice",
-        "help_folder": "Path to folder (prompted if omitted)",
-        "help_mode": "1 — append .jpg (default), 2 — replace extension with .jpg",
-        "help_dry": "Show what would be done without touching files",
-        "help_lang": "UI language: en or ru (default: auto)",
-        "desc": "Batch-rename image files to .jpg",
-        "epilog": (
-            "Examples:\n"
-            "  python rename_to_jpg.py C:\\Photos\n"
-            "  python rename_to_jpg.py C:\\Photos --mode 2\n"
-            "  python rename_to_jpg.py C:\\Photos --dry-run\n"
-            "  python rename_to_jpg.py C:\\Photos --lang ru\n"
-        ),
-    },
     "ru": {
-        "folder_not_found": "❌ Папка не найдена: {path}",
-        "read_error": "❌ Не удалось прочитать папку: {err}",
-        "skip_already": "⏭ Пропущен (уже .jpg): {name}",
-        "skip_not_image": "⏭ Пропущен (не изображение): {name}",
-        "conflict": "⚠️ Конфликт: {old} → {new} (уже существует, пропущен)",
-        "dry_run": "🔍 (dry-run) {old} → {new}",
-        "renamed": "✅ {old} → {new}",
-        "rename_error": "❌ Ошибка при переименовании {name}: {err}",
-        "summary": "\n📊 {prefix}переименовано {renamed}, пропущено {skipped}",
-        "dry_prefix": "Dry-run: ",
-        "processing": "\n📁 Обработка папки: {path}\n",
-        "enter_folder": "Введите путь к папке: ",
-        "no_path": "❌ Путь не указан",
-        "modes": "Режимы:\n  1 - Только добавить .jpg (не меняя имя)\n  2 - Заменить расширение на .jpg",
-        "choose_mode": "\nВыберите режим (1/2) [1]: ",
-        "bad_choice": "❌ Неверный выбор",
-        "help_folder": "Путь к папке (если не указан — будет запрошен)",
-        "help_mode": "1 — добавить .jpg в конец (по умолчанию), 2 — заменить расширение на .jpg",
-        "help_dry": "Показать, что будет сделано, но не менять файлы",
-        "help_lang": "Язык интерфейса: en или ru (по умолчанию: авто)",
-        "desc": "Массовое переименование файлов изображений в .jpg",
-        "epilog": (
-            "Примеры:\n"
-            "  python rename_to_jpg.py C:\\Photos\n"
-            "  python rename_to_jpg.py C:\\Photos --mode 2\n"
-            "  python rename_to_jpg.py C:\\Photos --dry-run\n"
-            "  python rename_to_jpg.py C:\\Photos --lang ru\n"
-        ),
+        "title": "Переименовать в JPG",
+        "folder": "Папка:",
+        "browse": "Обзор...",
+        "mode": "Режим:",
+        "mode_1": "Добавить .jpg",
+        "mode_2": "Заменить расширение",
+        "recursive": "Включая вложенные папки",
+        "dry_run": "Тест (без изменений)",
+        "run": "▶ Запустить",
+        "undo": "↩ Отменить последнее",
+        "no_folder": "Выберите папку!",
+        "undo_title": "Отмена",
+        "undo_empty": "Нет файла истории для отмены.",
+        "undo_ok": "Успешно отменено {} переименований.",
+        "undo_err": "Ошибка при отмене: {}",
+        "log_skip_jpg": "⏭ Пропущен (уже .jpg): {}",
+        "log_skip_not_img": "⏭ Пропущен (не изображение): {}",
+        "log_conflict": "⚠️ Конфликт: {} → {} (уже существует)",
+        "log_dry": "🔍 (тест) {} → {}",
+        "log_ok": "✅ {} → {}",
+        "log_err": "❌ Ошибка: {} — {}",
+        "log_summary": "\n📊 Итог: переименовано {}, пропущено {}",
+        "lang": "Язык:",
     },
+    "en": {
+        "title": "Rename to JPG",
+        "folder": "Folder:",
+        "browse": "Browse...",
+        "mode": "Mode:",
+        "mode_1": "Append .jpg",
+        "mode_2": "Replace extension",
+        "recursive": "Include subfolders",
+        "dry_run": "Dry-run (no changes)",
+        "run": "▶ Run",
+        "undo": "↩ Undo last",
+        "no_folder": "Please select a folder!",
+        "undo_title": "Undo",
+        "undo_empty": "No history file to undo.",
+        "undo_ok": "Successfully undone {} renames.",
+        "undo_err": "Error during undo: {}",
+        "log_skip_jpg": "⏭ Skipped (already .jpg): {}",
+        "log_skip_not_img": "⏭ Skipped (not an image): {}",
+        "log_conflict": "⚠️ Conflict: {} → {} (already exists)",
+        "log_dry": "🔍 (dry-run) {} → {}",
+        "log_ok": "✅ {} → {}",
+        "log_err": "❌ Error: {} — {}",
+        "log_summary": "\n📊 Summary: renamed {}, skipped {}",
+        "lang": "Language:",
+    }
 }
 
-
-def detect_lang() -> str:
-    """Auto-detect language from the system locale. Falls back to English."""
+def detect_lang():
     try:
-        import locale
         loc = locale.getlocale()[0] or ""
     except Exception:
         loc = ""
     return "ru" if loc.lower().startswith("ru") else "en"
 
+# ==========================================
+# ЛОГИКА
+# ==========================================
+def get_files(folder_path, recursive=False):
+    file_list = []
+    if recursive:
+        for root, _, files in os.walk(folder_path):
+            for f in files:
+                file_list.append(os.path.join(root, f))
+    else:
+        for f in os.listdir(folder_path):
+            path = os.path.join(folder_path, f)
+            if os.path.isfile(path):
+                file_list.append(path)
+    return sorted(file_list)
 
-def t(lang: str, key: str, **kwargs) -> str:
-    return STRINGS[lang][key].format(**kwargs)
-
-
-# ---------------------------------------------------------------- core logic
-def rename_files_to_jpg(
-    folder_path: str,
-    add_jpg_only: bool = True,
-    dry_run: bool = False,
-    lang: str = "en",
-) -> None:
+def process_files(folder_path, mode, recursive=False, dry_run=False, log_callback=None, lang="ru"):
+    t = STRINGS[lang]
     if not os.path.isdir(folder_path):
-        print(t(lang, "folder_not_found", path=folder_path))
-        return
+        msg = f"❌ Folder not found: {folder_path}" if lang=="en" else f"❌ Папка не найдена: {folder_path}"
+        return log_callback(msg) if log_callback else print(msg)
 
-    try:
-        files = sorted(os.listdir(folder_path))
-    except OSError as e:
-        print(t(lang, "read_error", err=e))
-        return
-
+    files = get_files(folder_path, recursive)
     renamed_count = 0
     skipped_count = 0
+    history = []
 
-    for filename in files:
-        old_path = os.path.join(folder_path, filename)
-
-        if os.path.isdir(old_path):
-            continue
-
+    for old_path in files:
+        filename = os.path.basename(old_path)
         name, ext = os.path.splitext(filename)
         ext_lower = ext.lower()
 
+        def log(text):
+            if log_callback: log_callback(text)
+            else: print(text)
+
         if ext_lower == ".jpg":
-            print(t(lang, "skip_already", name=filename))
+            log(t["log_skip_jpg"].format(filename))
             skipped_count += 1
             continue
 
         if ext_lower and ext_lower not in IMAGE_EXTS:
-            print(t(lang, "skip_not_image", name=filename))
+            log(t["log_skip_not_img"].format(filename))
             skipped_count += 1
             continue
 
-        new_filename = filename + ".jpg" if add_jpg_only else name + ".jpg"
-        new_path = os.path.join(folder_path, new_filename)
+        new_filename = filename + ".jpg" if mode == "1" else name + ".jpg"
+        new_path = os.path.join(os.path.dirname(old_path), new_filename)
 
         if os.path.exists(new_path):
-            print(t(lang, "conflict", old=filename, new=new_filename))
+            log(t["log_conflict"].format(filename, new_filename))
             skipped_count += 1
             continue
 
         if dry_run:
-            print(t(lang, "dry_run", old=filename, new=new_filename))
+            log(t["log_dry"].format(filename, new_filename))
             renamed_count += 1
             continue
 
         try:
             os.rename(old_path, new_path)
-            print(t(lang, "renamed", old=filename, new=new_filename))
+            log(t["log_ok"].format(filename, new_filename))
             renamed_count += 1
+            history.append({"old": old_path, "new": new_path})
         except OSError as e:
-            print(t(lang, "rename_error", name=filename, err=e))
+            log(t["log_err"].format(filename, e))
             skipped_count += 1
 
-    prefix = t(lang, "dry_prefix") if dry_run else ""
-    print(t(lang, "summary", prefix=prefix, renamed=renamed_count, skipped=skipped_count))
+    if history:
+        try:
+            existing_history = []
+            if os.path.exists(LOG_FILE):
+                with open(LOG_FILE, "r", encoding="utf-8") as f:
+                    existing_history = json.load(f)
+            
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            existing_history.append({"timestamp": timestamp, "changes": history})
+            
+            with open(LOG_FILE, "w", encoding="utf-8") as f:
+                json.dump(existing_history, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"Log error: {e}")
 
+    log(t["log_summary"].format(renamed_count, skipped_count))
 
-# ---------------------------------------------------------------- CLI
-def parse_args(argv=None):
-    # Pre-scan --lang so help text is already in the right language.
-    pre = argparse.ArgumentParser(add_help=False)
-    pre.add_argument("--lang", choices=["en", "ru"], default=None)
-    known, _ = pre.parse_known_args(argv)
-    lang = known.lang or detect_lang()
+def undo_last(lang="ru"):
+    t = STRINGS[lang]
+    if not os.path.exists(LOG_FILE):
+        return t["undo_empty"]
+    try:
+        with open(LOG_FILE, "r", encoding="utf-8") as f:
+            history = json.load(f)
+        if not history:
+            return t["undo_empty"]
+        
+        last_op = history.pop()
+        restored = 0
+        for item in last_op["changes"]:
+            old_path, new_path = item["old"], item["new"]
+            if os.path.exists(new_path):
+                os.rename(new_path, old_path)
+                restored += 1
+        
+        with open(LOG_FILE, "w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+        return t["undo_ok"].format(restored)
+    except Exception as e:
+        return t["undo_err"].format(e)
 
-    parser = argparse.ArgumentParser(
-        description=t(lang, "desc"),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=t(lang, "epilog"),
-    )
-    parser.add_argument("folder", nargs="?", help=t(lang, "help_folder"))
-    parser.add_argument(
-        "--mode", choices=["1", "2"], default=None, help=t(lang, "help_mode")
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true", help=t(lang, "help_dry")
-    )
-    parser.add_argument(
-        "--lang", choices=["en", "ru"], default=None, help=t(lang, "help_lang")
-    )
-    args = parser.parse_args(argv)
-    args.lang = args.lang or lang
-    return args
+# ==========================================
+# GUI
+# ==========================================
+class App:
+    def __init__(self, root):
+        self.root = root
+        self.root.geometry("650x550")
+        self.root.resizable(False, False)
+        
+        # Вишнево-белая палитра
+        self.bg_color = "#E5E7EB"
+        self.cherry = "#800020"
+        self.cherry_hover = "#5c0017"
+        self.text_color = "#1F2937"
+        
+        self.root.configure(bg=self.bg_color)
+        
+        self.lang_var = tk.StringVar(value=detect_lang())
+        
+        self.folder_var = tk.StringVar()
+        self.mode_var = tk.StringVar(value="1")
+        self.recursive_var = tk.BooleanVar(value=False)
+        self.dry_run_var = tk.BooleanVar(value=False)
 
+        self.t = STRINGS[self.lang_var.get()]
+        
+        self.build_ui()
+        self.update_lang() # Первичная отрисовка текста
 
-def main(argv=None) -> int:
-    args = parse_args(argv)
-    lang = args.lang
+    def build_ui(self):
+        # 1. Язык (сверху справа)
+        frame_lang = tk.Frame(self.root, bg=self.bg_color)
+        frame_lang.pack(fill=tk.X, padx=10, pady=5)
+        self.lbl_lang = tk.Label(frame_lang, bg=self.bg_color, fg=self.text_color)
+        self.lbl_lang.pack(side=tk.LEFT)
+        
+        self.rb_ru = tk.Radiobutton(frame_lang, text="RU", variable=self.lang_var, value="ru", command=self.update_lang, bg=self.bg_color, fg=self.text_color, selectcolor=self.bg_color, activebackground=self.bg_color)
+        self.rb_ru.pack(side=tk.LEFT, padx=5)
+        
+        self.rb_en = tk.Radiobutton(frame_lang, text="EN", variable=self.lang_var, value="en", command=self.update_lang, bg=self.bg_color, fg=self.text_color, selectcolor=self.bg_color, activebackground=self.bg_color)
+        self.rb_en.pack(side=tk.LEFT)
 
-    folder = args.folder
-    if not folder:
-        folder = input(t(lang, "enter_folder")).strip()
-    if not folder:
-        print(t(lang, "no_path"))
-        return 1
+        # 2. Выбор папки
+        frame_path = tk.Frame(self.root, pady=10, padx=10, bg=self.bg_color)
+        frame_path.pack(fill=tk.X)
+        self.lbl_folder = tk.Label(frame_path, bg=self.bg_color, fg=self.text_color)
+        self.lbl_folder.pack(side=tk.LEFT)
+        tk.Entry(frame_path, textvariable=self.folder_var).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        self.btn_browse = tk.Button(frame_path, command=self.browse_folder, bg=self.bg_color, fg=self.cherry, relief=tk.GROOVE)
+        self.btn_browse.pack(side=tk.LEFT)
 
-    print(t(lang, "processing", path=folder))
+        # 3. Настройки
+        frame_opts = tk.Frame(self.root, padx=10, pady=5, bg=self.bg_color)
+        frame_opts.pack(fill=tk.X)
+        
+        self.lbl_mode = tk.Label(frame_opts, bg=self.bg_color, fg=self.text_color)
+        self.lbl_mode.grid(row=0, column=0, sticky=tk.W)
+        
+        self.rb_mode1 = tk.Radiobutton(frame_opts, variable=self.mode_var, value="1", bg=self.bg_color, fg=self.text_color, selectcolor=self.bg_color, activebackground=self.bg_color)
+        self.rb_mode1.grid(row=0, column=1, sticky=tk.W)
+        
+        self.rb_mode2 = tk.Radiobutton(frame_opts, variable=self.mode_var, value="2", bg=self.bg_color, fg=self.text_color, selectcolor=self.bg_color, activebackground=self.bg_color)
+        self.rb_mode2.grid(row=0, column=2, sticky=tk.W)
 
-    mode = args.mode
-    if mode is None:
-        print(t(lang, "modes"))
-        mode = input(t(lang, "choose_mode")).strip() or "1"
+        self.chk_recursive = tk.Checkbutton(frame_opts, variable=self.recursive_var, bg=self.bg_color, fg=self.text_color, selectcolor=self.bg_color, activebackground=self.bg_color)
+        self.chk_recursive.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=5)
+        
+        self.chk_dry = tk.Checkbutton(frame_opts, variable=self.dry_run_var, bg=self.bg_color, fg=self.text_color, selectcolor=self.bg_color, activebackground=self.bg_color)
+        self.chk_dry.grid(row=1, column=2, sticky=tk.W, pady=5)
 
-    if mode not in ("1", "2"):
-        print(t(lang, "bad_choice"))
-        return 1
+        # 4. Кнопки
+        frame_btns = tk.Frame(self.root, pady=15, bg=self.bg_color)
+        frame_btns.pack()
+        
+        self.btn_run = tk.Button(frame_btns, command=self.run_script, bg=self.cherry, fg="white", font=("Segoe UI", 10, "bold"), width=18, relief=tk.FLAT, cursor="hand2")
+        self.btn_run.pack(side=tk.LEFT, padx=10)
+        
+        self.btn_undo = tk.Button(frame_btns, command=self.run_undo, bg="white", fg=self.cherry, font=("Segoe UI", 10), width=20, relief=tk.GROOVE, cursor="hand2", bd=1)
+        self.btn_undo.pack(side=tk.LEFT, padx=10)
 
-    rename_files_to_jpg(
-        folder,
-        add_jpg_only=(mode == "1"),
+        # 5. Лог
+        self.log_text = tk.Text(self.root, height=15, padx=10, pady=10, state=tk.DISABLED, bg="#F3F4F6", fg=self.text_color, font=("Consolas", 10), relief=tk.FLAT, bd=1)
+        self.log_text.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
+
+    def update_lang(self):
+        self.t = STRINGS[self.lang_var.get()]
+        self.root.title(self.t["title"])
+        self.lbl_lang.config(text=self.t["lang"])
+        self.lbl_folder.config(text=self.t["folder"])
+        self.btn_browse.config(text=self.t["browse"])
+        self.lbl_mode.config(text=self.t["mode"])
+        self.rb_mode1.config(text=self.t["mode_1"])
+        self.rb_mode2.config(text=self.t["mode_2"])
+        self.chk_recursive.config(text=self.t["recursive"])
+        self.chk_dry.config(text=self.t["dry_run"])
+        self.btn_run.config(text=self.t["run"])
+        self.btn_undo.config(text=self.t["undo"])
+
+    def browse_folder(self):
+        folder = filedialog.askdirectory()
+        if folder:
+            self.folder_var.set(folder)
+
+    def log(self, text):
+        self.log_text.config(state=tk.NORMAL)
+        self.log_text.insert(tk.END, text + "\n")
+        self.log_text.see(tk.END)
+        self.log_text.config(state=tk.DISABLED)
+
+    def run_script(self):
+        folder = self.folder_var.get()
+        if not folder:
+            messagebox.showwarning(self.t["title"], self.t["no_folder"])
+            return
+        
+        self.log_text.config(state=tk.NORMAL)
+        self.log_text.delete(1.0, tk.END)
+        self.log_text.config(state=tk.DISABLED)
+
+        process_files(
+            folder_path=folder,
+            mode=self.mode_var.get(),
+            recursive=self.recursive_var.get(),
+            dry_run=self.dry_run_var.get(),
+            log_callback=self.log,
+            lang=self.lang_var.get()
+        )
+
+    def run_undo(self):
+        result = undo_last(lang=self.lang_var.get())
+        messagebox.showinfo(self.t["undo_title"], result)
+
+# ==========================================
+# CLI
+# ==========================================
+def main_cli():
+    parser = argparse.ArgumentParser(description="Batch rename to .jpg")
+    parser.add_argument("folder", help="Folder path")
+    parser.add_argument("--mode", choices=["1", "2"], default="1")
+    parser.add_argument("--recursive", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--undo", action="store_true")
+    parser.add_argument("--lang", choices=["ru", "en"], default=detect_lang())
+    
+    args = parser.parse_args()
+
+    if args.undo:
+        print(undo_last(lang=args.lang))
+        return
+
+    process_files(
+        folder_path=args.folder,
+        mode=args.mode,
+        recursive=args.recursive,
         dry_run=args.dry_run,
-        lang=lang,
+        lang=args.lang
     )
-    return 0
-
 
 if __name__ == "__main__":
-    exit_code = main()
-    # Пауза только если программа запущена как .exe (двойным кликом)
-    if getattr(sys, 'frozen', False):
-        input("\nНажмите Enter, чтобы выйти...")
-    sys.exit(exit_code)
+    if sys.platform == "win32":
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+        
+    if len(sys.argv) > 1:
+        main_cli()
+    else:
+        root = tk.Tk()
+        app = App(root)
+        root.mainloop()
