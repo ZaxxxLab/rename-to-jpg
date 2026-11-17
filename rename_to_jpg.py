@@ -19,6 +19,10 @@ import argparse
 import os
 import sys
 
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+
 IMAGE_EXTS = {
     ".png", ".jpeg", ".jpg", ".webp", ".bmp", ".gif",
     ".tiff", ".tif", ".heic", ".avif",
