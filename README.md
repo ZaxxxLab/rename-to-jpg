@@ -6,6 +6,12 @@ A small cross-platform command-line utility that batch-renames image files to th
 
 
 
+## Screenshots
+![Interface](docs/screenshot-main.png)
+![Result](docs/screenshot-result.png)
+
+
+
 > \*\*This is not a converter.\*\* The script changes file names only. Renaming a PNG to `.jpg` leaves the content as PNG, and some programs may fail to open it. If you need real conversion, use ImageMagick, `pillow`, or `ffmpeg`.
 
 
