@@ -231,4 +231,8 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_code = main()
+    # Пауза только если программа запущена как .exe (двойным кликом)
+    if getattr(sys, 'frozen', False):
+        input("\nНажмите Enter, чтобы выйти...")
+    sys.exit(exit_code)
